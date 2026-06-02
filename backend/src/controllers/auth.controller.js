@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
@@ -12,7 +13,9 @@ function generarTokens(userId) {
   const refreshToken = jwt.sign(
     { userId },
     process.env.JWT_REFRESH_SECRET,
-    { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' }
+    // jwtid (jti) único: evita colisión del token cuando dos logins ocurren
+    // en el mismo segundo (mismo iat) y la columna RefreshToken.token es @unique.
+    { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d', jwtid: crypto.randomUUID() }
   );
   return { accessToken, refreshToken };
 }
