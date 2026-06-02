@@ -1,0 +1,576 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RegimenFiscal {
+  GENERAL
+  REM
+  SEM
+  ZLC
+}
+
+enum EstadoObligacion {
+  PENDIENTE
+  PRESENTADA
+  PAGADA
+  VENCIDA
+}
+
+enum PeriodicidadObligacion {
+  MENSUAL
+  TRIMESTRAL
+  SEMESTRAL
+  ANUAL
+}
+
+enum TipoObligacion {
+  ITBMS
+  ISR
+  ANTICIPO_ISR
+  CSS_SEA
+  AVISO_OPERACION
+  IMPUESTO_INMUEBLE
+  RETENCION
+}
+
+enum EstadoDeclaracion {
+  BORRADOR
+  PRESENTADA
+  PAGADA
+}
+
+enum TipoCuotaAnticipo {
+  PRIMERA
+  SEGUNDA
+  TERCERA
+}
+
+enum TipoNotaFiscal {
+  CREDITO
+  DEBITO_FISCAL
+}
+
+enum TipoAlerta {
+  VENCIMIENTO
+  CAMBIO_NORMATIVO
+  NUEVA_RESOLUCION
+  SALDO_FAVOR
+  RECORDATORIO
+}
+
+enum RolUsuario {
+  ADMIN
+  CONTADOR
+  CLIENTE
+}
+
+enum TipoContrato {
+  INDEFINIDO
+  DEFINIDO
+  TEMPORAL
+}
+
+enum PeriodoPago {
+  MENSUAL
+  QUINCENAL
+}
+
+enum TipoPlanilla {
+  REGULAR
+  DECIMO
+}
+
+enum TipoUsoInmueble {
+  VIVIENDA_PRINCIPAL
+  PATRIMONIO_FAMILIAR
+  OTRO
+}
+
+enum TipoSociedad {
+  SA
+  FIP
+  LIMITADA
+  OTRO
+}
+
+enum PeriodicidadMunicipal {
+  MENSUAL
+  TRIMESTRAL
+  SEMESTRAL
+  ANUAL
+}
+
+enum EstadoPlanilla {
+  BORRADOR
+  APROBADA
+  PAGADA
+}
+
+// ─── Usuarios y Auth ────────────────────────────────────────────────────────
+
+model Usuario {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  nombre       String
+  rol          RolUsuario @default(CONTADOR)
+  activo       Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  empresas     EmpresaUsuario[]
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  usuarioId String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+}
+
+model EmpresaUsuario {
+  empresaId  String
+  usuarioId  String
+  rol        RolUsuario @default(CONTADOR)
+  asignadoEn DateTime   @default(now())
+
+  empresa    Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@id([empresaId, usuarioId])
+}
+
+// ─── Empresa ─────────────────────────────────────────────────────────────────
+
+model Empresa {
+  id                  String        @id @default(cuid())
+  nombre              String
+  ruc                 String        @unique
+  dv                  String
+  regimen             RegimenFiscal @default(GENERAL)
+  periodoFiscal       String        @default("ENERO-DICIEMBRE")
+  esGranContribuyente Boolean       @default(false)
+  actividadEconomica  String?
+  direccion           String?
+  telefono            String?
+  email               String?
+  representanteLegal  String?
+  activa              Boolean       @default(true)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  usuarios            EmpresaUsuario[]
+  obligaciones        ObligacionFiscal[]
+  declaracionesITBMS  DeclaracionITBMS[]
+  declaracionesISR    DeclaracionISR[]
+  anticipos           Anticipo[]
+  alertas             AlertaFiscal[]
+  calendarios         CalendarioFiscal[]
+  notasFiscales       NotaFiscal[]
+  propiedades         PropiedadInmueble[]
+  empleados           Empleado[]
+  periodosPlanilla    PeriodoPlanilla[]
+  tasasUnicas         TasaUnica[]
+  declaracionesDividendos DeclaracionDividendos[]
+  obligacionesMunicipales ObligacionMunicipal[]
+}
+
+// ─── Obligaciones Fiscales ────────────────────────────────────────────────────
+
+model ObligacionFiscal {
+  id                 String                 @id @default(cuid())
+  empresaId          String
+  tipo               TipoObligacion
+  periodicidad       PeriodicidadObligacion
+  descripcion        String?
+  proximoVencimiento DateTime
+  periodoReferencia  String?                // ej: "2024-03", "2024"
+  estado             EstadoObligacion       @default(PENDIENTE)
+  montoEstimado      Decimal?               @db.Decimal(15, 2)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  empresa            Empresa                @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  pagos              PagoImpuesto[]
+}
+
+// ─── Declaración ITBMS (Formulario 430) ──────────────────────────────────────
+
+model DeclaracionITBMS {
+  id                  String            @id @default(cuid())
+  empresaId           String
+  periodo             String            // "2024-03"
+  mes                 Int
+  anio                Int
+  fechaVencimiento    DateTime
+
+  // Ventas
+  ventasGravadas7     Decimal           @default(0) @db.Decimal(15, 2)
+  ventasGravadas10    Decimal           @default(0) @db.Decimal(15, 2)
+  ventasGravadas15    Decimal           @default(0) @db.Decimal(15, 2)
+  ventasExentas       Decimal           @default(0) @db.Decimal(15, 2)
+  ventasNoSujetas     Decimal           @default(0) @db.Decimal(15, 2)
+  totalVentas         Decimal           @default(0) @db.Decimal(15, 2)
+
+  // Débito fiscal (ITBMS cobrado)
+  itbmsDebito7        Decimal           @default(0) @db.Decimal(15, 2)
+  itbmsDebito10       Decimal           @default(0) @db.Decimal(15, 2)
+  itbmsDebito15       Decimal           @default(0) @db.Decimal(15, 2)
+  itbmsDebito         Decimal           @default(0) @db.Decimal(15, 2)
+
+  // Crédito fiscal (ITBMS pagado en compras)
+  itbmsCredito        Decimal           @default(0) @db.Decimal(15, 2)
+  creditoMesAnterior  Decimal           @default(0) @db.Decimal(15, 2)
+
+  // Resultado
+  saldo               Decimal           @default(0) @db.Decimal(15, 2) // + a pagar, - a favor
+  saldoAFavor         Decimal           @default(0) @db.Decimal(15, 2)
+
+  estado              EstadoDeclaracion @default(BORRADOR)
+  fechaPresentacion   DateTime?
+  numeroCasilla       String?
+  observaciones       String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  empresa             Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@unique([empresaId, periodo])
+}
+
+// ─── Declaración ISR ──────────────────────────────────────────────────────────
+
+model DeclaracionISR {
+  id                   String            @id @default(cuid())
+  empresaId            String
+  anio                 Int
+  fechaVencimiento     DateTime
+
+  // Ingresos y gastos
+  ingresosBrutos       Decimal           @default(0) @db.Decimal(15, 2)
+  gastosDeducibles     Decimal           @default(0) @db.Decimal(15, 2)
+  rentaNeta            Decimal           @default(0) @db.Decimal(15, 2)
+
+  // Método A: 25% sobre renta neta
+  impuestoMetodoA      Decimal           @default(0) @db.Decimal(15, 2)
+
+  // Método B CAIR: 4.67% sobre ingresos brutos
+  impuestoMetodoB      Decimal           @default(0) @db.Decimal(15, 2)
+
+  // Impuesto final (el mayor entre A y B)
+  metodoPagado         String?           // "A" | "B"
+  impuestoCausado      Decimal           @default(0) @db.Decimal(15, 2)
+
+  // Créditos y anticipos
+  anticiposPagados     Decimal           @default(0) @db.Decimal(15, 2)
+  retencionesRecibidas Decimal           @default(0) @db.Decimal(15, 2)
+  otrosCreditos        Decimal           @default(0) @db.Decimal(15, 2)
+
+  // Resultado
+  saldo                Decimal           @default(0) @db.Decimal(15, 2)
+
+  estado               EstadoDeclaracion @default(BORRADOR)
+  fechaPresentacion    DateTime?
+  observaciones        String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  empresa              Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  anticipos            Anticipo[]
+
+  @@unique([empresaId, anio])
+}
+
+// ─── Anticipos ISR ────────────────────────────────────────────────────────────
+
+model Anticipo {
+  id               String            @id @default(cuid())
+  empresaId        String
+  declaracionISRId String?
+  anio             Int
+  cuota            TipoCuotaAnticipo
+  monto            Decimal           @db.Decimal(15, 2)
+  fechaVence       DateTime
+  estado           EstadoObligacion  @default(PENDIENTE)
+  fechaPago        DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  empresa          Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  declaracionISR   DeclaracionISR?   @relation(fields: [declaracionISRId], references: [id])
+  pagos            PagoImpuesto[]
+
+  @@unique([empresaId, anio, cuota])
+}
+
+// ─── Pagos de Impuestos ───────────────────────────────────────────────────────
+
+model PagoImpuesto {
+  id               String           @id @default(cuid())
+  obligacionId     String?
+  anticipoId       String?
+  monto            Decimal          @db.Decimal(15, 2)
+  fecha            DateTime
+  referenciaBanco  String?
+  banco            String?
+  comprobante      String?          // URL o path al archivo
+  observaciones    String?
+  createdAt        DateTime         @default(now())
+
+  obligacion       ObligacionFiscal? @relation(fields: [obligacionId], references: [id])
+  anticipo         Anticipo?         @relation(fields: [anticipoId], references: [id])
+}
+
+// ─── Alertas Fiscales ─────────────────────────────────────────────────────────
+
+model AlertaFiscal {
+  id            String     @id @default(cuid())
+  empresaId     String
+  tipo          TipoAlerta
+  mensaje       String
+  detalle       String?
+  fechaVence    DateTime?
+  diasRestantes Int?
+  leida         Boolean    @default(false)
+  activa        Boolean    @default(true)
+  prioridad     Int        @default(1) // 1=baja, 2=media, 3=alta, 4=crítica
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  empresa       Empresa    @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+}
+
+// ─── Calendario Fiscal ────────────────────────────────────────────────────────
+
+model CalendarioFiscal {
+  id          String   @id @default(cuid())
+  empresaId   String
+  mes         Int
+  anio        Int
+  obligaciones Json     // Array de vencimientos del mes
+  generadoEn  DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  empresa     Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@unique([empresaId, mes, anio])
+}
+
+// ─── Notas Fiscales ───────────────────────────────────────────────────────────
+
+model NotaFiscal {
+  id        String         @id @default(cuid())
+  empresaId String
+  tipo      TipoNotaFiscal
+  monto     Decimal        @db.Decimal(15, 2)
+  origen    String?        // descripción del origen
+  estado    EstadoObligacion @default(PENDIENTE)
+  periodo   String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  empresa   Empresa        @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+}
+
+// ─── Propiedades Inmuebles ────────────────────────────────────────────────────
+
+model PropiedadInmueble {
+  id             String           @id @default(cuid())
+  empresaId      String
+  descripcion    String
+  ubicacion      String?
+  finca          String?
+  valorCatastral Decimal          @db.Decimal(15, 2)
+  tipoUso        TipoUsoInmueble  @default(OTRO)
+  tasaImpuesto   Decimal          @default(1.0) @db.Decimal(5, 2)
+  exenta         Boolean          @default(false)
+  activa         Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  empresa        Empresa          @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  cuotas         CuotaInmueble[]
+}
+
+model CuotaInmueble {
+  id           String           @id @default(cuid())
+  propiedadId  String
+  anio         Int
+  numeroCuota  Int              // 1, 2, 3
+  monto        Decimal          @db.Decimal(15, 2)
+  fechaVence   DateTime
+  estado       EstadoObligacion @default(PENDIENTE)
+  fechaPago    DateTime?
+  createdAt    DateTime         @default(now())
+
+  propiedad    PropiedadInmueble @relation(fields: [propiedadId], references: [id], onDelete: Cascade)
+
+  @@unique([propiedadId, anio, numeroCuota])
+}
+
+// ─── Planilla / Nómina ────────────────────────────────────────────────────────
+
+model Empleado {
+  id             String       @id @default(cuid())
+  empresaId      String
+  cedula         String
+  nombre         String
+  apellido       String
+  cargo          String
+  departamento   String?
+  fechaIngreso   DateTime
+  tipoContrato   TipoContrato @default(INDEFINIDO)
+  salarioMensual Decimal      @db.Decimal(15, 2)
+  periodoPago    PeriodoPago  @default(MENSUAL)
+  activo         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  empresa        Empresa      @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  lineas         LineaPlanilla[]
+
+  @@unique([empresaId, cedula])
+}
+
+model PeriodoPlanilla {
+  id           String         @id @default(cuid())
+  empresaId    String
+  tipo         TipoPlanilla   @default(REGULAR)
+  mes          Int
+  anio         Int
+  fechaInicio  DateTime
+  fechaFin     DateTime
+  fechaPago    DateTime?
+  estado       EstadoPlanilla @default(BORRADOR)
+
+  totalBruto   Decimal        @default(0) @db.Decimal(15, 2)
+  totalCSSEmp  Decimal        @default(0) @db.Decimal(15, 2)
+  totalSEAEmp  Decimal        @default(0) @db.Decimal(15, 2)
+  totalISR     Decimal        @default(0) @db.Decimal(15, 2)
+  totalNeto    Decimal        @default(0) @db.Decimal(15, 2)
+  totalCSSPat  Decimal        @default(0) @db.Decimal(15, 2)
+  totalSEAPat  Decimal        @default(0) @db.Decimal(15, 2)
+  totalPatrono Decimal        @default(0) @db.Decimal(15, 2)
+
+  notas        String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  empresa      Empresa        @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  lineas       LineaPlanilla[]
+
+  @@unique([empresaId, tipo, mes, anio])
+}
+
+model LineaPlanilla {
+  id              String          @id @default(cuid())
+  periodoId       String
+  empleadoId      String
+
+  salarioBruto    Decimal         @db.Decimal(15, 2)
+  otrosIngresos   Decimal         @default(0) @db.Decimal(15, 2)
+  cssEmpleado     Decimal         @db.Decimal(15, 2)
+  seaEmpleado     Decimal         @db.Decimal(15, 2)
+  isr             Decimal         @default(0) @db.Decimal(15, 2)
+  otrosDescuentos Decimal         @default(0) @db.Decimal(15, 2)
+  totalDeduccion  Decimal         @db.Decimal(15, 2)
+  salarioNeto     Decimal         @db.Decimal(15, 2)
+  cssPatrono      Decimal         @db.Decimal(15, 2)
+  seaPatrono      Decimal         @db.Decimal(15, 2)
+  notas           String?
+
+  periodo         PeriodoPlanilla @relation(fields: [periodoId], references: [id], onDelete: Cascade)
+  empleado        Empleado        @relation(fields: [empleadoId], references: [id])
+
+  @@unique([periodoId, empleadoId])
+}
+
+// ─── Tasa Única ───────────────────────────────────────────────────────────────
+
+model TasaUnica {
+  id           String           @id @default(cuid())
+  empresaId    String
+  anio         Int
+  tipoSociedad TipoSociedad     @default(SA)
+  monto        Decimal          @default(300) @db.Decimal(10, 2)
+  fechaVence   DateTime
+  estado       EstadoObligacion @default(PENDIENTE)
+  fechaPago    DateTime?
+  referencia   String?
+  observaciones String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  empresa      Empresa          @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@unique([empresaId, anio])
+}
+
+// ─── Dividendos y Complementario ─────────────────────────────────────────────
+
+model DeclaracionDividendos {
+  id                    String            @id @default(cuid())
+  empresaId             String
+  anio                  Int
+  utilidadNeta          Decimal           @default(0) @db.Decimal(15, 2)
+  dividendosLocales     Decimal           @default(0) @db.Decimal(15, 2)
+  dividendosExtranjeros Decimal           @default(0) @db.Decimal(15, 2)
+  retencionLocal        Decimal           @default(0) @db.Decimal(15, 2)
+  retencionExtranjera   Decimal           @default(0) @db.Decimal(15, 2)
+  baseComplementario    Decimal           @default(0) @db.Decimal(15, 2)
+  complementario        Decimal           @default(0) @db.Decimal(15, 2)
+  totalImpuesto         Decimal           @default(0) @db.Decimal(15, 2)
+  estado                EstadoDeclaracion @default(BORRADOR)
+  fechaPresentacion     DateTime?
+  observaciones         String?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  empresa               Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@unique([empresaId, anio])
+}
+
+// ─── Impuestos Municipales ────────────────────────────────────────────────────
+
+model ObligacionMunicipal {
+  id           String               @id @default(cuid())
+  empresaId    String
+  nombre       String
+  municipio    String?
+  descripcion  String?
+  periodicidad PeriodicidadMunicipal @default(ANUAL)
+  montoFijo    Decimal?             @db.Decimal(15, 2)
+  activa       Boolean              @default(true)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  empresa      Empresa              @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  pagos        PagoMunicipal[]
+}
+
+model PagoMunicipal {
+  id           String              @id @default(cuid())
+  obligacionId String
+  anio         Int
+  periodo      String?
+  monto        Decimal             @db.Decimal(15, 2)
+  fechaVence   DateTime
+  fechaPago    DateTime?
+  estado       EstadoObligacion    @default(PENDIENTE)
+  referencia   String?
+  observaciones String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  obligacion   ObligacionMunicipal @relation(fields: [obligacionId], references: [id], onDelete: Cascade)
+}
