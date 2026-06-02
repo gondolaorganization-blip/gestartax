@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuthStore } from '../store/auth.store';
-import { reporteApi, descargarPdf } from '../api/reporte.api';
+import { reporteApi, descargarArchivo } from '../api/reporte.api';
 import { formatFecha } from '../utils/format';
 
 const ANIO_ACTUAL = new Date().getFullYear();
@@ -16,28 +16,34 @@ function TarjetaReporte({ icono, titulo, descripcion, onDescargar, cargando }) {
           <p className="text-sm text-slate-500 mt-1">{descripcion}</p>
         </div>
       </div>
-      <button
-        onClick={onDescargar}
-        disabled={cargando}
-        className="w-full py-2 px-4 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-      >
-        {cargando ? (
-          <>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          onClick={() => onDescargar('pdf')}
+          disabled={cargando}
+          className="py-2 px-3 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+        >
+          {cargando ? (
             <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
             </svg>
-            Generando PDF...
-          </>
-        ) : (
-          <>
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          ) : '📄'}
+          PDF
+        </button>
+        <button
+          onClick={() => onDescargar('excel')}
+          disabled={cargando}
+          className="py-2 px-3 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+        >
+          {cargando ? (
+            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
             </svg>
-            Descargar PDF
-          </>
-        )}
-      </button>
+          ) : '📊'}
+          Excel
+        </button>
+      </div>
     </div>
   );
 }
@@ -51,24 +57,25 @@ export default function Reportes() {
   const empresaId = empresaActual?.id;
   const ruc = empresaActual?.ruc || empresaId;
 
-  async function descargar(tipo) {
+  async function descargar(tipo, formato = 'pdf') {
     if (!empresaId) return;
     setCargando((prev) => ({ ...prev, [tipo]: true }));
     setError(null);
     try {
+      const ext = formato === 'excel' ? 'xlsx' : 'pdf';
       let resp;
       let nombre;
       if (tipo === 'itbms') {
-        resp = await reporteApi.itbms(empresaId, anio);
-        nombre = `itbms_${ruc}_${anio}.pdf`;
+        resp = await reporteApi.itbms(empresaId, anio, formato);
+        nombre = `itbms_${ruc}_${anio}.${ext}`;
       } else if (tipo === 'isr') {
-        resp = await reporteApi.isr(empresaId, anio);
-        nombre = `isr_${ruc}_${anio}.pdf`;
+        resp = await reporteApi.isr(empresaId, anio, formato);
+        nombre = `isr_${ruc}_${anio}.${ext}`;
       } else {
-        resp = await reporteApi.posicionFiscal(empresaId, anio);
-        nombre = `posicion_fiscal_${ruc}_${anio}.pdf`;
+        resp = await reporteApi.posicionFiscal(empresaId, anio, formato);
+        nombre = `posicion_fiscal_${ruc}_${anio}.${ext}`;
       }
-      descargarPdf(resp.data, nombre);
+      descargarArchivo(resp.data, nombre);
     } catch (err) {
       const msg = err.response?.data
         ? await err.response.data.text?.().then(JSON.parse).then((d) => d.error).catch(() => 'Error al generar el reporte')
@@ -136,21 +143,21 @@ export default function Reportes() {
           icono="📊"
           titulo="Reporte ITBMS Anual"
           descripcion={`Detalle mensual de declaraciones ITBMS del año ${anio}: ventas gravadas, débito, crédito y saldo.`}
-          onDescargar={() => descargar('itbms')}
+          onDescargar={(formato) => descargar('itbms', formato)}
           cargando={cargando.itbms}
         />
         <TarjetaReporte
           icono="📋"
           titulo="Declaración ISR Anual"
           descripcion={`Cálculo del Impuesto sobre la Renta ${anio}: Método A vs CAIR, anticipos y saldo a pagar.`}
-          onDescargar={() => descargar('isr')}
+          onDescargar={(formato) => descargar('isr', formato)}
           cargando={cargando.isr}
         />
         <TarjetaReporte
           icono="📁"
           titulo="Posición Fiscal Consolidada"
           descripcion={`Vista ejecutiva del estado tributario: ITBMS, ISR, anticipos, obligaciones vencidas y próximos vencimientos.`}
-          onDescargar={() => descargar('posicion')}
+          onDescargar={(formato) => descargar('posicion', formato)}
           cargando={cargando.posicion}
         />
       </div>

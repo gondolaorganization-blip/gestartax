@@ -1,4 +1,12 @@
 const prisma = require('../utils/prisma');
+const { excelITBMS, excelISR, excelPosicion } = require('../services/excel.service');
+
+function enviarExcel(res, buffer, nombreArchivo) {
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${nombreArchivo}"`);
+  res.setHeader('Content-Length', buffer.length);
+  return res.send(Buffer.from(buffer));
+}
 
 function enviarPdf(res, docDef, nombreArchivo) {
   return new Promise((resolve, reject) => {
@@ -32,6 +40,11 @@ async function reporteITBMS(req, res, next) {
     ]);
 
     if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+
+    if (req.query.formato === 'excel') {
+      const buf = await excelITBMS(empresa, anio, declaraciones);
+      return enviarExcel(res, buf, `ITBMS_${empresa.ruc || empresaId}_${anio}.xlsx`);
+    }
 
     const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
@@ -156,6 +169,11 @@ async function reporteISR(req, res, next) {
 
     if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
     if (!isr) return res.status(404).json({ error: 'Sin declaración ISR para este año' });
+
+    if (req.query.formato === 'excel') {
+      const buf = await excelISR(empresa, anio, isr, anticipos);
+      return enviarExcel(res, buf, `ISR_${empresa.ruc || empresaId}_${anio}.xlsx`);
+    }
 
     const usd = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(n) || 0);
     const fechaCorta = (f) => f ? new Date(f).toLocaleDateString('es-PA') : '—';
@@ -332,6 +350,11 @@ async function reportePosicionFiscal(req, res, next) {
       const dias = Math.round((new Date(obl.proximoVencimiento) - hoy) / (1000 * 60 * 60 * 24));
       return { ...obl, diasRestantes: dias, urgencia: dias <= 1 ? 'CRITICA' : dias <= 7 ? 'ALTA' : dias <= 15 ? 'MEDIA' : 'NORMAL' };
     });
+
+    if (req.query.formato === 'excel') {
+      const buf = await excelPosicion(empresa, anio, { itbmsResumen, isrAnio, anticipoResumen, proximos: proximosConUrgencia });
+      return enviarExcel(res, buf, `PosicionFiscal_${empresa.ruc || empresaId}_${anio}.xlsx`);
+    }
 
     const urgenciaColor = (u) => ({ CRITICA: '#dc2626', ALTA: '#d97706', MEDIA: '#0284c7', NORMAL: '#16a34a' })[u] || '#1e293b';
 
