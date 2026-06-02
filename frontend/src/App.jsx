@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import RutaProtegida from './components/RutaProtegida';
 import AppLayout from './components/AppLayout';
 
+import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import NuevaEmpresa from './pages/NuevaEmpresa';
@@ -71,9 +72,9 @@ export default function App() {
             <Route path="municipales" element={<Municipales />} />
           </Route>
 
-          {/* Raíz */}
-          <Route path="/" element={<Navigate to="/login" replace />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          {/* Raíz — landing pública */}
+          <Route path="/" element={<Landing />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
